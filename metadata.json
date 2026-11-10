@@ -1,0 +1,6 @@
+{
+  "name": "ASG Estimate & Technical Shop Drawing Generator",
+  "description": "Commercial glass schedule estimator and CAD shop drawing generator with 8.5\" x 11\" Letter print and PDF output for American Switch Glass.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
