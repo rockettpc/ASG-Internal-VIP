@@ -45,6 +45,21 @@ export interface SpacerLayer {
 
 export type GlassStackLayer = GlassLayer | InterlayerLayer | ActiveFilmLayer | SpacerLayer;
 
+export interface LiteRevisionEntry {
+  rev: number;
+  timestamp: string;
+  changes: string[];
+  snapshot?: {
+    tag: string;
+    quantity: number;
+    widthRaw: string;
+    heightRaw: string;
+    width: number;
+    height: number;
+    layers: GlassStackLayer[];
+  };
+}
+
 export interface GlassLineItem {
   id: string;
   tag: string; // e.g. "Conference Room Window A"
@@ -57,6 +72,8 @@ export interface GlassLineItem {
   notes?: string;
   fabricatorCost?: number; // internal cost from glass fabricator per unit
   unitPrice?: number; // client-facing unit price per lite
+  revision?: number;
+  revisionHistory?: LiteRevisionEntry[];
 }
 
 export interface ProjectInfo {
@@ -110,6 +127,7 @@ export interface SavedProjectSummary {
   docId: string;
   projectName: string;
   clientName: string;
+  endClientName?: string;
   status: ProjectStatus;
   itemCount: number;
   totalPanels: number;

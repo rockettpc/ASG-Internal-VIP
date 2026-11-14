@@ -31,6 +31,9 @@ import {
   Eye,
   ChevronDown,
   ChevronUp,
+  History,
+  RotateCcw,
+  X,
 } from 'lucide-react';
 
 interface LineItemCardProps {
@@ -51,6 +54,7 @@ export const LineItemCard: React.FC<LineItemCardProps> = ({
   onDuplicate,
   onViewDrawing,
 }) => {
+  const [showHistory, setShowHistory] = useState(false);
   const [showAdvancedLayers, setShowAdvancedLayers] = useState(false);
   const metrics = calculateItemMetrics(item);
 
@@ -186,6 +190,20 @@ export const LineItemCard: React.FC<LineItemCardProps> = ({
 
         {/* Actions */}
         <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowHistory(true)}
+            className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-full transition-colors tabular-nums ${
+              (item.revision ?? 0) > 0
+                ? 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200/80'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+            title="View & recall drawing revision history"
+          >
+            <History className="w-3.5 h-3.5" />
+            <span>REV {item.revision ?? 0}</span>
+          </button>
+
           <button
             type="button"
             onClick={onViewDrawing}
@@ -717,6 +735,114 @@ export const LineItemCard: React.FC<LineItemCardProps> = ({
           />
         </div>
       </div>
+
+      {/* Revision History Modal */}
+      {showHistory && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Revision history for ${item.tag || `Lite ${index + 1}`}`}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+        >
+          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">
+                  Revision History &middot; {item.tag || `Lite ${index + 1}`}
+                </div>
+                <div className="text-xs text-slate-500">
+                  Current Drawing: DWG-{String(index + 1).padStart(3, '0')} &middot; REV{' '}
+                  {item.revision ?? 0}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowHistory(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors"
+                aria-label="Close revision history"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 space-y-3 bg-[#F2F2F7]/50">
+              {(!item.revisionHistory || item.revisionHistory.length === 0) ? (
+                <div className="text-center py-8 text-xs text-slate-500 bg-white rounded-2xl border border-black/[0.05]">
+                  No saved revisions yet. Save the project to record REV 0 and track future changes to Qty, Width, Height, or Assembly Stack.
+                </div>
+              ) : (
+                [...item.revisionHistory].reverse().map((entry) => (
+                  <div
+                    key={entry.rev}
+                    className="bg-white rounded-2xl border border-black/[0.06] p-4 shadow-2xs"
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-xs font-bold tabular-nums ${
+                            entry.rev === (item.revision ?? 0)
+                              ? 'bg-[#007AFF] text-white'
+                              : 'bg-slate-100 text-slate-700'
+                          }`}
+                        >
+                          REV {entry.rev}
+                        </span>
+                        <span className="text-xs text-slate-500 tabular-nums">
+                          {new Date(entry.timestamp).toLocaleString()}
+                        </span>
+                      </div>
+
+                      {entry.snapshot && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const snap = entry.snapshot!;
+                            onUpdate({
+                              ...item,
+                              quantity: snap.quantity,
+                              widthRaw: snap.widthRaw,
+                              heightRaw: snap.heightRaw,
+                              width: snap.width,
+                              height: snap.height,
+                              layers: snap.layers.map((l) => ({
+                                ...l,
+                                id: generateLayerId(),
+                              })),
+                            });
+                            setShowHistory(false);
+                          }}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold text-[#007AFF] bg-[#007AFF]/10 hover:bg-[#007AFF]/20 transition-colors"
+                          title="Recall this revision's dimensions and assembly stack"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>Recall Spec</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <ul className="space-y-1 text-xs text-slate-700">
+                      {entry.changes.map((c, idx) => (
+                        <li key={idx} className="flex items-start gap-1.5">
+                          <span className="text-slate-400 mt-0.5">&bull;</span>
+                          <span>{c}</span>
+                        </li>
+                      ))}
+                    </ul>
+
+                    {entry.snapshot && (
+                      <div className="mt-2.5 pt-2 border-t border-slate-100 text-[11px] text-slate-500 tabular-nums">
+                        Spec: Qty {entry.snapshot.quantity} &middot;{' '}
+                        {entry.snapshot.widthRaw}&quot; &times; {entry.snapshot.heightRaw}&quot; &middot;{' '}
+                        {entry.snapshot.layers.length} layers
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 };

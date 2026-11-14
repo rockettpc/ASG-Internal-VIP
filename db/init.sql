@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS project_items (
   notes TEXT,
   fabricator_cost DECIMAL(10,2) DEFAULT NULL,
   unit_price DECIMAL(10,2) DEFAULT NULL,
+  revision INT NOT NULL DEFAULT 0,
+  revision_history_json LONGTEXT,
   CONSTRAINT fk_project_items_project
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -154,6 +154,7 @@ export default function App() {
         status: projectStatus,
       });
       setActiveProjectId(created.id);
+      if (created.items) setItems(created.items);
       setHasUnsavedChanges(false);
       await loadProjectsList();
       return created.id;
@@ -174,6 +175,7 @@ export default function App() {
           status: projectStatus,
         });
         setActiveProjectId(updated.id);
+        if (updated.items) setItems(updated.items);
         showToast('Project saved to database');
       } else {
         const created = await createProject({
@@ -182,6 +184,7 @@ export default function App() {
           status: projectStatus,
         });
         setActiveProjectId(created.id);
+        if (created.items) setItems(created.items);
         showToast('New project created in database');
       }
       setHasUnsavedChanges(false);

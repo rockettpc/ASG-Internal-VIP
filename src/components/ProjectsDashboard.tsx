@@ -77,6 +77,7 @@ export const ProjectsDashboard: React.FC<ProjectsDashboardProps> = ({
         !q ||
         p.projectName.toLowerCase().includes(q) ||
         p.clientName.toLowerCase().includes(q) ||
+        (p.endClientName || '').toLowerCase().includes(q) ||
         p.docId.toLowerCase().includes(q);
       return matchesStatus && matchesQuery;
     });
@@ -252,6 +253,7 @@ export const ProjectsDashboard: React.FC<ProjectsDashboardProps> = ({
                 <tr className="border-b border-slate-100 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                   <th className="py-3.5 pl-5 pr-3">Project</th>
                   <th className="py-3.5 px-3 hidden sm:table-cell">Fabricator</th>
+                  <th className="py-3.5 px-3 hidden md:table-cell">End Client</th>
                   <th className="py-3.5 px-3">Status</th>
                   <th className="py-3.5 px-3 hidden md:table-cell text-right">Panels</th>
                   <th className="py-3.5 px-3 hidden md:table-cell text-right">Active Film</th>
@@ -284,11 +286,18 @@ export const ProjectsDashboard: React.FC<ProjectsDashboardProps> = ({
                         <div className="text-[11px] text-slate-500 tabular-nums mt-0.5">
                           {proj.docId}
                           <span className="sm:hidden"> &middot; {proj.clientName}</span>
+                          {proj.endClientName && (
+                            <span className="md:hidden"> &middot; {proj.endClientName}</span>
+                          )}
                         </div>
                       </td>
 
                       <td className="py-3.5 px-3 text-slate-600 hidden sm:table-cell">
                         {proj.clientName}
+                      </td>
+
+                      <td className="py-3.5 px-3 text-slate-600 hidden md:table-cell">
+                        {proj.endClientName || <span className="text-slate-300">&mdash;</span>}
                       </td>
 
                       <td

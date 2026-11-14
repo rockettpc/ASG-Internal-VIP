@@ -16,7 +16,9 @@ import {
   Trash2,
   Eye,
   X,
+  Compass,
 } from 'lucide-react';
+import { CadAttachmentViewer } from './CadAttachmentViewer';
 
 interface ProjectAttachmentsProps {
   projectId: string | null;
@@ -32,14 +34,9 @@ function formatBytes(bytes: number): string {
 }
 
 function isPreviewableImage(att: ProjectAttachment): boolean {
+  if (isCadFile(att) || isHeic(att)) return false;
   const mime = att.mimeType.toLowerCase();
-  const name = att.fileName.toLowerCase();
-  if (name.endsWith('.heic') || name.endsWith('.heif')) return false;
-  return (
-    mime.startsWith('image/') &&
-    !mime.includes('heic') &&
-    !mime.includes('heif')
-  );
+  return mime.startsWith('image/');
 }
 
 function isPdf(att: ProjectAttachment): boolean {
@@ -57,6 +54,17 @@ function isHeic(att: ProjectAttachment): boolean {
     name.endsWith('.heif') ||
     mime.includes('heic') ||
     mime.includes('heif')
+  );
+}
+
+function isCadFile(att: ProjectAttachment): boolean {
+  const name = att.fileName.toLowerCase();
+  const mime = att.mimeType.toLowerCase();
+  return (
+    name.endsWith('.dxf') ||
+    name.endsWith('.dwg') ||
+    mime.includes('dxf') ||
+    mime.includes('dwg')
   );
 }
 
@@ -160,7 +168,7 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
               Project Documents &amp; Photos
             </h3>
             <p className="text-[11px] text-slate-500">
-              PDF, JPG, PNG, iPhone HEIC, CAD, &amp; site photos (up to 25 MB)
+              PDF, JPG, PNG, iPhone HEIC, CAD, &amp; site photos (auto-compressed for storage)
             </p>
           </div>
         </div>
@@ -227,6 +235,8 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
               const showThumb = isPreviewableImage(att);
               const pdf = isPdf(att);
               const heic = isHeic(att);
+              const cad = isCadFile(att);
+              const canPreview = showThumb || pdf || cad;
 
               return (
                 <div
@@ -236,7 +246,7 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                   <button
                     type="button"
                     onClick={() =>
-                      showThumb || pdf
+                      canPreview
                         ? setPreviewItem(att)
                         : window.open(getAttachmentUrl(att.id), '_blank')
                     }
@@ -253,6 +263,8 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                         className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
                           pdf
                             ? 'bg-rose-100 text-rose-600'
+                            : cad
+                            ? 'bg-indigo-100 text-indigo-600'
                             : heic
                             ? 'bg-sky-100 text-[#007AFF]'
                             : 'bg-slate-200 text-slate-600'
@@ -260,6 +272,8 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                       >
                         {pdf ? (
                           <FileText className="w-5 h-5" />
+                        ) : cad ? (
+                          <Compass className="w-5 h-5" />
                         ) : heic ? (
                           <ImageIcon className="w-5 h-5" />
                         ) : (
@@ -274,13 +288,14 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                       </div>
                       <div className="text-[11px] text-slate-500 tabular-nums">
                         {formatBytes(att.fileSize)}
+                        {cad && ' · CAD Drawing'}
                         {heic && ' · iPhone HEIC'}
                       </div>
                     </div>
                   </button>
 
                   <div className="flex items-center gap-0.5 shrink-0">
-                    {(showThumb || pdf) && (
+                    {canPreview && (
                       <button
                         type="button"
                         onClick={() => setPreviewItem(att)}
@@ -363,6 +378,11 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                   src={getAttachmentUrl(previewItem.id)}
                   alt={previewItem.fileName}
                   className="max-w-full max-h-[72vh] rounded-xl shadow-md object-contain"
+                />
+              ) : isCadFile(previewItem) ? (
+                <CadAttachmentViewer
+                  url={getAttachmentUrl(previewItem.id)}
+                  fileName={previewItem.fileName}
                 />
               ) : (
                 <iframe

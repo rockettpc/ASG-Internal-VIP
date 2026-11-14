@@ -3,7 +3,10 @@ import mysql, { RowDataPacket } from 'mysql2/promise';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
+import zlib from 'zlib';
 import multer from 'multer';
+import { compressUploadedFile } from './compression';
+import { buildInitialRevision, computeNextRevision } from './revisions';
 import {
   calculateItemMetrics,
   calculateProjectTotals,
@@ -57,6 +60,20 @@ function generateId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+async function ensureRevisionColumns(): Promise<void> {
+  try {
+    await pool.query(
+      `ALTER TABLE project_items
+        ADD COLUMN IF NOT EXISTS revision INT NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS revision_history_json LONGTEXT`
+    );
+  } catch (err) {
+    console.warn('ensureRevisionColumns warning:', err);
+  }
+}
+
+void ensureRevisionColumns();
+
 // Health check
 app.get('/api/health', async (_req, res) => {
   try {
@@ -77,6 +94,7 @@ app.get('/api/projects', async (_req, res) => {
         p.doc_id AS docId,
         p.project_name AS projectName,
         p.client_name AS clientName,
+        p.end_client_name AS endClientName,
         p.status,
         p.total_lites AS totalPanels,
         p.total_gross_sf AS totalGrossSqFt,
@@ -147,22 +165,34 @@ app.get('/api/projects/:id', async (req, res) => {
       preparedBy: row.prepared_by || '',
     };
 
-    const items: GlassLineItem[] = itemRows.map((item) => ({
-      id: item.id,
-      tag: item.tag,
-      quantity: Number(item.quantity),
-      widthRaw: item.width_raw,
-      heightRaw: item.height_raw,
-      width: Number(item.width),
-      height: Number(item.height),
-      layers: JSON.parse(item.layers_json || '[]'),
-      notes: item.notes || '',
-      fabricatorCost:
-        item.fabricator_cost !== null && item.fabricator_cost !== undefined
-          ? Number(item.fabricator_cost)
-          : undefined,
-      unitPrice: item.unit_price !== null ? Number(item.unit_price) : undefined,
-    }));
+    const items: GlassLineItem[] = itemRows.map((item) => {
+      let revisionHistory = [];
+      if (item.revision_history_json) {
+        try {
+          revisionHistory = JSON.parse(item.revision_history_json);
+        } catch {
+          revisionHistory = [];
+        }
+      }
+      return {
+        id: item.id,
+        tag: item.tag,
+        quantity: Number(item.quantity),
+        widthRaw: item.width_raw,
+        heightRaw: item.height_raw,
+        width: Number(item.width),
+        height: Number(item.height),
+        layers: JSON.parse(item.layers_json || '[]'),
+        notes: item.notes || '',
+        fabricatorCost:
+          item.fabricator_cost !== null && item.fabricator_cost !== undefined
+            ? Number(item.fabricator_cost)
+            : undefined,
+        unitPrice: item.unit_price !== null ? Number(item.unit_price) : undefined,
+        revision: Number(item.revision || 0),
+        revisionHistory,
+      };
+    });
 
     res.json({
       id: row.id,
@@ -238,14 +268,19 @@ app.post('/api/projects', async (req, res) => {
       ]
     );
 
+    const nowIso = new Date().toISOString();
+    const savedItems: GlassLineItem[] = [];
+
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       const itemId = `${projectId}-${i}-${Math.random().toString(36).slice(2, 6)}`;
+      const { revision, revisionHistory } = buildInitialRevision(item, nowIso);
       await conn.query(
         `INSERT INTO project_items (
           id, project_id, sort_order, tag, quantity, width_raw, height_raw,
-          width, height, layers_json, notes, fabricator_cost, unit_price
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          width, height, layers_json, notes, fabricator_cost, unit_price,
+          revision, revision_history_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           itemId,
           projectId,
@@ -260,8 +295,16 @@ app.post('/api/projects', async (req, res) => {
           item.notes || '',
           item.fabricatorCost ?? null,
           item.unitPrice ?? null,
+          revision,
+          JSON.stringify(revisionHistory),
         ]
       );
+      savedItems.push({
+        ...item,
+        id: itemId,
+        revision,
+        revisionHistory,
+      });
     }
 
     await conn.commit();
@@ -270,7 +313,7 @@ app.post('/api/projects', async (req, res) => {
       id: projectId,
       status: safeStatus,
       project,
-      items,
+      items: savedItems,
     });
   } catch (err) {
     await conn.rollback();
@@ -353,16 +396,64 @@ app.put('/api/projects/:id', async (req, res) => {
       ]
     );
 
+    const [prevRows] = await conn.query<RowDataPacket[]>(
+      'SELECT * FROM project_items WHERE project_id = ? ORDER BY sort_order ASC',
+      [projectId]
+    );
+    const prevById = new Map<string, GlassLineItem>();
+    for (const r of prevRows) {
+      let revHist = [];
+      if (r.revision_history_json) {
+        try {
+          revHist = JSON.parse(r.revision_history_json);
+        } catch {
+          revHist = [];
+        }
+      }
+      prevById.set(r.id, {
+        id: r.id,
+        tag: r.tag,
+        quantity: Number(r.quantity),
+        widthRaw: r.width_raw,
+        heightRaw: r.height_raw,
+        width: Number(r.width),
+        height: Number(r.height),
+        layers: JSON.parse(r.layers_json || '[]'),
+        notes: r.notes || '',
+        revision: Number(r.revision || 0),
+        revisionHistory: revHist,
+      });
+    }
+
     await conn.query('DELETE FROM project_items WHERE project_id = ?', [projectId]);
+
+    const nowIso = new Date().toISOString();
+    const savedItems: GlassLineItem[] = [];
+    const usedIds = new Set<string>();
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      const itemId = `${projectId}-${i}-${Math.random().toString(36).slice(2, 6)}`;
+      const matchedPrev =
+        item.id && prevById.has(item.id)
+          ? prevById.get(item.id)
+          : undefined;
+
+      const itemId =
+        item.id && prevById.has(item.id) && !usedIds.has(item.id)
+          ? item.id
+          : `${projectId}-${i}-${Math.random().toString(36).slice(2, 6)}`;
+      usedIds.add(itemId);
+
+      const { revision, revisionHistory } = matchedPrev
+        ? computeNextRevision(matchedPrev, item, nowIso)
+        : buildInitialRevision(item, nowIso);
+
       await conn.query(
         `INSERT INTO project_items (
           id, project_id, sort_order, tag, quantity, width_raw, height_raw,
-          width, height, layers_json, notes, fabricator_cost, unit_price
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          width, height, layers_json, notes, fabricator_cost, unit_price,
+          revision, revision_history_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           itemId,
           projectId,
@@ -377,8 +468,17 @@ app.put('/api/projects/:id', async (req, res) => {
           item.notes || '',
           item.fabricatorCost ?? null,
           item.unitPrice ?? null,
+          revision,
+          JSON.stringify(revisionHistory),
         ]
       );
+
+      savedItems.push({
+        ...item,
+        id: itemId,
+        revision,
+        revisionHistory,
+      });
     }
 
     await conn.commit();
@@ -387,7 +487,7 @@ app.put('/api/projects/:id', async (req, res) => {
       id: projectId,
       status: safeStatus,
       project,
-      items,
+      items: savedItems,
     });
   } catch (err) {
     await conn.rollback();
@@ -488,20 +588,32 @@ app.post('/api/projects/:id/attachments', upload.single('file'), async (req, res
     }
 
     const attId = generateId('att');
-    const mimeType = file.mimetype || 'application/octet-stream';
+    const compressed = await compressUploadedFile(
+      file.path,
+      file.originalname,
+      file.mimetype || 'application/octet-stream'
+    );
 
     await pool.query(
       `INSERT INTO project_attachments (id, project_id, file_name, mime_type, file_size, storage_name)
        VALUES (?, ?, ?, ?, ?, ?)`,
-      [attId, req.params.id, file.originalname, mimeType, file.size, file.filename]
+      [
+        attId,
+        req.params.id,
+        compressed.fileName,
+        compressed.mimeType,
+        compressed.fileSize,
+        compressed.storageName,
+      ]
     );
 
     res.status(201).json({
       id: attId,
       projectId: req.params.id,
-      fileName: file.originalname,
-      mimeType,
-      fileSize: file.size,
+      fileName: compressed.fileName,
+      mimeType: compressed.mimeType,
+      fileSize: compressed.fileSize,
+      originalSize: compressed.originalSize,
       createdAt: new Date().toISOString(),
     });
   } catch (err) {
@@ -533,6 +645,22 @@ app.get('/api/attachments/:attachmentId', async (req, res) => {
       'Content-Disposition',
       `${disposition}; filename="${encodeURIComponent(att.file_name)}"`
     );
+
+    if (String(att.storage_name).endsWith('.gz')) {
+      const readStream = fs.createReadStream(filePath);
+      const gunzip = zlib.createGunzip();
+      readStream.on('error', (err) => {
+        console.error('Attachment read error:', err);
+        if (!res.headersSent) res.status(500).end();
+      });
+      gunzip.on('error', (err) => {
+        console.error('Attachment gunzip error:', err);
+        if (!res.headersSent) res.status(500).end();
+      });
+      readStream.pipe(gunzip).pipe(res);
+      return;
+    }
+
     res.sendFile(filePath);
   } catch (err) {
     console.error('GET /api/attachments/:attachmentId error:', err);

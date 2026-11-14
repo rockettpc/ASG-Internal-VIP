@@ -206,7 +206,7 @@ export const CadShopDrawing: React.FC<CadShopDrawingProps> = ({
               DOC #{project.docId}
             </div>
             <div className="text-[9px] text-slate-500 font-mono">
-              DWG: ASG-DWG-{String(itemIndex + 1).padStart(3, '0')} &middot; REV 0
+              DWG: ASG-DWG-{String(itemIndex + 1).padStart(3, '0')} &middot; REV {item.revision ?? 0}
             </div>
           </div>
         </div>
@@ -782,9 +782,14 @@ export const CadShopDrawing: React.FC<CadShopDrawingProps> = ({
                 SHEET {sheetNumber} OF {totalSheets}
               </span>
               <span className="text-[9px] font-black text-[#004F8A]">
-                REV 0
+                REV {item.revision ?? 0}
               </span>
             </div>
+            {item.revisionHistory && item.revisionHistory.length > 1 && (
+              <div className="text-[6.5px] font-mono text-slate-500 truncate mt-0.5" title={item.revisionHistory[item.revisionHistory.length - 1].changes.join('; ')}>
+                LAST REV: {item.revisionHistory[item.revisionHistory.length - 1].changes[0]}
+              </div>
+            )}
           </div>
         </div>
 
