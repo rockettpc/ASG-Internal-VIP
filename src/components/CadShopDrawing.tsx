@@ -1,5 +1,10 @@
 import React from 'react';
-import { GlassLineItem, ProjectInfo } from '../types/glass';
+import {
+  GlassLineItem,
+  ProjectInfo,
+  ActiveFilmLayer,
+  BusbarLocation,
+} from '../types/glass';
 import {
   calculateItemMetrics,
   formatFraction,
@@ -53,6 +58,106 @@ export const CadShopDrawing: React.FC<CadShopDrawingProps> = ({
 
   const filmW = Math.max(10, drawW - filmOffsetScaledX * 2);
   const filmH = Math.max(10, drawH - filmOffsetScaledY * 2);
+
+  // Active film busbar location geometry
+  const activeFilmLayer = item.layers.find(
+    (l): l is ActiveFilmLayer => l.kind === 'active_film'
+  );
+  const busbarLocation: BusbarLocation =
+    activeFilmLayer?.busbarLocation ?? 'Top Edge (Center)';
+
+  const filmX = elevStartX + filmOffsetScaledX;
+  const filmY = elevStartY + filmOffsetScaledY;
+  const barLenH = Math.min(80, Math.max(24, filmW * 0.45));
+  const barLenV = Math.min(90, Math.max(24, filmH * 0.45));
+
+  const getBusbarCoords = () => {
+    switch (busbarLocation) {
+      case 'Top Edge (Left)': {
+        const bx = filmX + 8;
+        const cx = bx + barLenH / 2;
+        const cy = filmY;
+        return {
+          rect: { x: bx, y: filmY - 2, width: barLenH, height: 4 },
+          dot: { cx, cy },
+          line: { x1: cx, y1: cy, x2: cx + 15, y2: elevStartY - 12 },
+          text: {
+            x: cx + 19,
+            y: elevStartY - 10,
+            anchor: 'start' as const,
+            label: 'BUSBAR (TOP LEFT) · 18 AWG LEADS',
+          },
+        };
+      }
+      case 'Top Edge (Right)': {
+        const bx = filmX + filmW - barLenH - 8;
+        const cx = bx + barLenH / 2;
+        const cy = filmY;
+        return {
+          rect: { x: bx, y: filmY - 2, width: barLenH, height: 4 },
+          dot: { cx, cy },
+          line: { x1: cx, y1: cy, x2: cx - 15, y2: elevStartY - 12 },
+          text: {
+            x: cx - 19,
+            y: elevStartY - 10,
+            anchor: 'end' as const,
+            label: 'BUSBAR (TOP RIGHT) · 18 AWG LEADS',
+          },
+        };
+      }
+      case 'Bottom Edge': {
+        const bx = filmX + (filmW - barLenH) / 2;
+        const cx = filmX + filmW / 2;
+        const cy = filmY + filmH;
+        return {
+          rect: { x: bx, y: filmY + filmH - 2, width: barLenH, height: 4 },
+          dot: { cx, cy },
+          line: { x1: cx, y1: cy, x2: cx + 18, y2: elevStartY + drawH + 14 },
+          text: {
+            x: cx + 22,
+            y: elevStartY + drawH + 17,
+            anchor: 'start' as const,
+            label: 'BUSBAR (BOTTOM) · 18 AWG LEADS',
+          },
+        };
+      }
+      case 'Side Edge (Right)': {
+        const by = filmY + (filmH - barLenV) / 2;
+        const cx = filmX + filmW;
+        const cy = filmY + filmH / 2;
+        return {
+          rect: { x: filmX + filmW - 2, y: by, width: 4, height: barLenV },
+          dot: { cx, cy },
+          line: { x1: cx, y1: cy, x2: cx - 18, y2: cy - 16 },
+          text: {
+            x: cx - 22,
+            y: cy - 13,
+            anchor: 'end' as const,
+            label: 'BUSBAR (RIGHT) · 18 AWG LEADS',
+          },
+        };
+      }
+      case 'Top Edge (Center)':
+      default: {
+        const bx = filmX + (filmW - barLenH) / 2;
+        const cx = filmX + filmW / 2;
+        const cy = filmY;
+        return {
+          rect: { x: bx, y: filmY - 2, width: barLenH, height: 4 },
+          dot: { cx, cy },
+          line: { x1: cx, y1: cy, x2: cx + 18, y2: elevStartY - 12 },
+          text: {
+            x: cx + 22,
+            y: elevStartY - 10,
+            anchor: 'start' as const,
+            label: 'BUSBAR (TOP CENTER) · 18 AWG LEADS',
+          },
+        };
+      }
+    }
+  };
+
+  const busbar = getBusbarCoords();
 
   // Cross section calculations
   const totalNomThicknessStr = formatFraction(metrics.totalNominalThickness);
@@ -196,42 +301,45 @@ export const CadShopDrawing: React.FC<CadShopDrawingProps> = ({
                   strokeDasharray="5 3"
                 />
 
-                {/* Busbar Strip on Top Edge */}
-                <rect
-                  x={elevStartX + filmOffsetScaledX + 10}
-                  y={elevStartY + filmOffsetScaledY - 2}
-                  width={Math.min(100, filmW - 20)}
-                  height="4"
-                  fill="#D97706"
-                  stroke="#78350F"
-                  strokeWidth="0.75"
-                />
-
-                {/* Busbar & Lead Wire Callout */}
-                <line
-                  x1={elevStartX + filmOffsetScaledX + 50}
-                  y1={elevStartY + filmOffsetScaledY}
-                  x2={elevStartX + filmOffsetScaledX + 75}
-                  y2={elevStartY - 18}
-                  stroke="#78350F"
-                  strokeWidth="1"
-                />
-                <circle
-                  cx={elevStartX + filmOffsetScaledX + 50}
-                  cy={elevStartY + filmOffsetScaledY}
-                  r="2"
-                  fill="#D97706"
-                />
-                <text
-                  x={elevStartX + filmOffsetScaledX + 80}
-                  y={elevStartY - 15}
-                  fontSize="8.5"
-                  fontFamily="monospace"
-                  fontWeight="bold"
-                  fill="#92400E"
-                >
-                  BUSBAR &middot; 18 AWG TEFLON LEADS (12 FT)
-                </text>
+                {/* Dynamic Busbar Strip & Lead Wire Callout */}
+                {activeFilmLayer && (
+                  <>
+                    <rect
+                      x={busbar.rect.x}
+                      y={busbar.rect.y}
+                      width={busbar.rect.width}
+                      height={busbar.rect.height}
+                      fill="#D97706"
+                      stroke="#78350F"
+                      strokeWidth="0.75"
+                    />
+                    <line
+                      x1={busbar.line.x1}
+                      y1={busbar.line.y1}
+                      x2={busbar.line.x2}
+                      y2={busbar.line.y2}
+                      stroke="#78350F"
+                      strokeWidth="1"
+                    />
+                    <circle
+                      cx={busbar.dot.cx}
+                      cy={busbar.dot.cy}
+                      r="2"
+                      fill="#D97706"
+                    />
+                    <text
+                      x={busbar.text.x}
+                      y={busbar.text.y}
+                      textAnchor={busbar.text.anchor}
+                      fontSize="8.5"
+                      fontFamily="monospace"
+                      fontWeight="bold"
+                      fill="#92400E"
+                    >
+                      {busbar.text.label}
+                    </text>
+                  </>
+                )}
 
                 {/* Top Width Dimension Line */}
                 <line

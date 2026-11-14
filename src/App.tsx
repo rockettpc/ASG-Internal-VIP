@@ -1,5 +1,10 @@
-import { useState, useEffect } from 'react';
-import { ProjectInfo, GlassLineItem } from './types/glass';
+import { useState, useEffect, useCallback } from 'react';
+import {
+  ProjectInfo,
+  GlassLineItem,
+  ProjectStatus,
+  SavedProjectSummary,
+} from './types/glass';
 import {
   INITIAL_PROJECT_INFO,
   INITIAL_LINE_ITEMS,
@@ -7,9 +12,21 @@ import {
   clonePresetLayers,
 } from './utils/presets';
 import { calculateProjectTotals } from './utils/dimensions';
-import { Header } from './components/Header';
+import {
+  fetchProjects,
+  fetchProjectById,
+  createProject,
+  updateProject,
+  updateProjectStatus,
+  deleteProject,
+} from './utils/api';
+import { Header, AppViewMode } from './components/Header';
+import { ProjectsDashboard } from './components/ProjectsDashboard';
+import { ReportsPage } from './components/ReportsPage';
+import { ProjectAttachments } from './components/ProjectAttachments';
 import { LineItemCard } from './components/LineItemCard';
 import { EstimateSheet } from './components/EstimateSheet';
+import { ClientProposalSheet } from './components/ClientProposalSheet';
 import { CadShopDrawing } from './components/CadShopDrawing';
 import { ProjectInfoModal } from './components/ProjectInfoModal';
 import { ExportDockerModal } from './components/ExportDockerModal';
@@ -17,65 +34,217 @@ import { DimensionTesterModal } from './components/DimensionTesterModal';
 import {
   Plus,
   Printer,
-  FileSpreadsheet,
-  Layers,
   Calculator,
   ArrowLeft,
-  CheckCircle,
+  CheckCircle2,
+  Save,
 } from 'lucide-react';
 
-const STORAGE_PROJECT_KEY = 'asg_estimator_project_v1';
-const STORAGE_ITEMS_KEY = 'asg_estimator_items_v1';
-
 export default function App() {
-  // Load initial data from localStorage if available
-  const [project, setProject] = useState<ProjectInfo>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_PROJECT_KEY);
-      if (saved) return JSON.parse(saved);
-    } catch {
-      // fallback
-    }
-    return INITIAL_PROJECT_INFO;
-  });
+  const [viewMode, setViewMode] = useState<AppViewMode>('dashboard');
 
-  const [items, setItems] = useState<GlassLineItem[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_ITEMS_KEY);
-      if (saved) return JSON.parse(saved);
-    } catch {
-      // fallback
-    }
-    return INITIAL_LINE_ITEMS;
-  });
+  // Database projects list state
+  const [projectsList, setProjectsList] = useState<SavedProjectSummary[]>([]);
+  const [isLoadingList, setIsLoadingList] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
 
-  const [viewMode, setViewMode] = useState<'edit' | 'print'>('edit');
+  // Active open project state
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [projectStatus, setProjectStatus] = useState<ProjectStatus>('Draft');
+  const [project, setProject] = useState<ProjectInfo>(INITIAL_PROJECT_INFO);
+  const [items, setItems] = useState<GlassLineItem[]>(INITIAL_LINE_ITEMS);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Modals & Submittal mode
+  const [submittalType, setSubmittalType] = useState<'fabricator' | 'client'>('fabricator');
+  const [includeCadInProposal, setIncludeCadInProposal] = useState(false);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [isDockerModalOpen, setIsDockerModalOpen] = useState(false);
   const [isTesterModalOpen, setIsTesterModalOpen] = useState(false);
-  const [selectedItemIndexForCAD, setSelectedItemIndexForCAD] = useState<number | null>(null);
+  const [, setSelectedItemIndexForCAD] = useState<number | null>(null);
 
-  // Sync to localStorage
-  useEffect(() => {
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage((curr) => (curr === msg ? null : curr));
+    }, 2800);
+  }, []);
+
+  const loadProjectsList = useCallback(async () => {
+    setIsLoadingList(true);
+    setListError(null);
     try {
-      localStorage.setItem(STORAGE_PROJECT_KEY, JSON.stringify(project));
-    } catch {
-      // quota or private mode
+      const data = await fetchProjects();
+      setProjectsList(data);
+    } catch (err) {
+      setListError(
+        err instanceof Error ? err.message : 'Unable to connect to database'
+      );
+    } finally {
+      setIsLoadingList(false);
     }
-  }, [project]);
+  }, []);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_ITEMS_KEY, JSON.stringify(items));
-    } catch {
-      // quota or private mode
-    }
-  }, [items]);
+    loadProjectsList();
+  }, [loadProjectsList]);
 
-  // Project Totals
   const totals = calculateProjectTotals(items);
 
-  // Handlers
+  // Dashboard CRUD handlers
+  const handleSelectProject = async (id: string) => {
+    try {
+      const record = await fetchProjectById(id);
+      setActiveProjectId(record.id);
+      setProjectStatus(record.status);
+      setProject(record.project);
+      setItems(record.items.length > 0 ? record.items : INITIAL_LINE_ITEMS);
+      setHasUnsavedChanges(false);
+      setViewMode('edit');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to open project');
+    }
+  };
+
+  const handleNewProject = () => {
+    const nextNum = 1050 + projectsList.length + 1;
+    setActiveProjectId(null);
+    setProjectStatus('Draft');
+    setProject({
+      ...INITIAL_PROJECT_INFO,
+      docId: `ASG-EST-${nextNum}`,
+      projectName: 'Untitled Switchable Glass Project',
+      clientName: 'New Client',
+      contactPerson: '',
+      contactEmail: '',
+      contactPhone: '',
+      projectAddress: '',
+      date: new Date().toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      }),
+    });
+    setItems([
+      {
+        id: generateItemId(),
+        tag: 'Conference Room Lite 1',
+        quantity: 1,
+        widthRaw: '36',
+        heightRaw: '84',
+        width: 36.0,
+        height: 84.0,
+        layers: clonePresetLayers('preset-standard-asg'),
+        notes: 'Standard 3/8" film setback.',
+      },
+    ]);
+    setHasUnsavedChanges(true);
+    setViewMode('edit');
+  };
+
+  const ensureProjectSaved = async (): Promise<string | null> => {
+    if (activeProjectId) return activeProjectId;
+    setIsSaving(true);
+    try {
+      const created = await createProject({
+        project,
+        items,
+        status: projectStatus,
+      });
+      setActiveProjectId(created.id);
+      setHasUnsavedChanges(false);
+      await loadProjectsList();
+      return created.id;
+    } catch {
+      return null;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveProject = async () => {
+    setIsSaving(true);
+    try {
+      if (activeProjectId) {
+        const updated = await updateProject(activeProjectId, {
+          project,
+          items,
+          status: projectStatus,
+        });
+        setActiveProjectId(updated.id);
+        showToast('Project saved to database');
+      } else {
+        const created = await createProject({
+          project,
+          items,
+          status: projectStatus,
+        });
+        setActiveProjectId(created.id);
+        showToast('New project created in database');
+      }
+      setHasUnsavedChanges(false);
+      await loadProjectsList();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to save project');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDuplicateProject = async (id: string) => {
+    try {
+      const source = await fetchProjectById(id);
+      await createProject({
+        project: {
+          ...source.project,
+          docId: `${source.project.docId}-COPY`,
+          projectName: `${source.project.projectName} (Copy)`,
+        },
+        items: source.items,
+        status: 'Draft',
+      });
+      await loadProjectsList();
+      showToast('Project duplicated');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to duplicate project');
+    }
+  };
+
+  const handleDeleteProject = async (id: string, name: string) => {
+    if (!window.confirm(`Delete "${name}" permanently from the database?`)) {
+      return;
+    }
+    try {
+      await deleteProject(id);
+      if (activeProjectId === id) {
+        setActiveProjectId(null);
+        setHasUnsavedChanges(true);
+      }
+      await loadProjectsList();
+      showToast('Project deleted');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to delete project');
+    }
+  };
+
+  const handleChangeProjectStatus = async (id: string, status: ProjectStatus) => {
+    try {
+      await updateProjectStatus(id, status);
+      setProjectsList((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, status } : p))
+      );
+      if (activeProjectId === id) {
+        setProjectStatus(status);
+      }
+      showToast(`Status updated to ${status}`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to update status');
+    }
+  };
+
+  // Line item handlers
   const handleAddItem = () => {
     const nextNum = items.length + 1;
     const newItem: GlassLineItem = {
@@ -90,12 +259,14 @@ export default function App() {
       notes: 'Standard 3/8" film setback with top lead wire access.',
     };
     setItems([...items, newItem]);
+    setHasUnsavedChanges(true);
   };
 
   const handleUpdateItem = (idx: number, updated: GlassLineItem) => {
     const copy = [...items];
     copy[idx] = updated;
     setItems(copy);
+    setHasUnsavedChanges(true);
   };
 
   const handleDeleteItem = (idx: number) => {
@@ -104,6 +275,7 @@ export default function App() {
       return;
     }
     setItems(items.filter((_, i) => i !== idx));
+    setHasUnsavedChanges(true);
   };
 
   const handleDuplicateItem = (idx: number) => {
@@ -117,21 +289,22 @@ export default function App() {
     const copy = [...items];
     copy.splice(idx + 1, 0, duplicated);
     setItems(copy);
-  };
-
-  const handleResetSampleData = () => {
-    if (window.confirm('Reset schedule to ASG sample project data? Current edits will be replaced.')) {
-      setProject(INITIAL_PROJECT_INFO);
-      setItems(INITIAL_LINE_ITEMS);
-      localStorage.removeItem(STORAGE_PROJECT_KEY);
-      localStorage.removeItem(STORAGE_ITEMS_KEY);
-    }
+    setHasUnsavedChanges(true);
   };
 
   const handlePrint = () => {
+    const originalTitle = document.title;
+    const printFilename = (project.docId || 'ASG-Submittal').trim();
+    document.title = printFilename;
+
+    const restoreTitle = () => {
+      document.title = originalTitle;
+      window.removeEventListener('afterprint', restoreTitle);
+    };
+    window.addEventListener('afterprint', restoreTitle);
+
     if (viewMode !== 'print') {
       setViewMode('print');
-      // allow state to render print mode before triggering window.print
       setTimeout(() => {
         window.print();
       }, 350);
@@ -139,6 +312,18 @@ export default function App() {
       window.print();
     }
   };
+
+  useEffect(() => {
+    const defaultTitle = 'ASG Estimate & Technical Shop Drawing Generator';
+    if (viewMode === 'print' && project.docId) {
+      document.title = project.docId.trim();
+    } else {
+      document.title = defaultTitle;
+    }
+    return () => {
+      document.title = defaultTitle;
+    };
+  }, [viewMode, project.docId]);
 
   const handleViewCadItem = (idx: number) => {
     setSelectedItemIndexForCAD(idx);
@@ -152,75 +337,132 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 flex flex-col font-sans">
-      {/* Top Application Header */}
+    <div className="min-h-screen bg-[#F2F2F7] text-slate-900 flex flex-col">
       <Header
         project={project}
+        projectStatus={projectStatus}
+        activeProjectId={activeProjectId}
+        hasUnsavedChanges={hasUnsavedChanges}
+        isSaving={isSaving}
         items={items}
         viewMode={viewMode}
         setViewMode={setViewMode}
         onAddItem={handleAddItem}
+        onSaveProject={handleSaveProject}
         onOpenProjectModal={() => setIsProjectModalOpen(true)}
-        onResetSampleData={handleResetSampleData}
         onOpenDockerExport={() => setIsDockerModalOpen(true)}
         onPrint={handlePrint}
       />
 
-      {/* Main View Area */}
+      {/* Toast Pill */}
+      {toastMessage && (
+        <div
+          role="status"
+          className="no-print fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900/90 backdrop-blur-xl text-white text-xs font-semibold px-4 py-2.5 rounded-full shadow-lg flex items-center gap-2"
+        >
+          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       <main className="flex-1">
-        {viewMode === 'edit' ? (
-          /* =========================================================================
-             EDIT & CONFIGURATION MODE
-             ========================================================================= */
-          <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
-            {/* Quick Status & Stats Dashboard Banner */}
-            <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-xs flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-[#004F8A]">
-                  <Layers className="w-5 h-5" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-bold text-slate-900">
-                    Commercial Glass Schedule ({items.length} Line Items)
-                  </h2>
-                  <p className="text-xs text-slate-500 font-mono">
-                    {project.projectName} &middot; ASG Switchable Privacy Specifications
-                  </p>
+        {viewMode === 'dashboard' ? (
+          <ProjectsDashboard
+            projects={projectsList}
+            activeProjectId={activeProjectId}
+            isLoading={isLoadingList}
+            error={listError}
+            onRefresh={loadProjectsList}
+            onSelectProject={handleSelectProject}
+            onNewProject={handleNewProject}
+            onDuplicateProject={handleDuplicateProject}
+            onDeleteProject={handleDeleteProject}
+            onChangeStatus={handleChangeProjectStatus}
+          />
+        ) : viewMode === 'reports' ? (
+          <ReportsPage onSelectProject={handleSelectProject} />
+        ) : viewMode === 'edit' ? (
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+            {/* Overview Summary Grid */}
+            <section
+              aria-label="Project summary metrics"
+              className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4"
+            >
+              <div className="bg-white rounded-2xl p-4 border border-black/[0.05] shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
+                <span className="text-xs font-medium text-slate-500">Panels</span>
+                <div className="mt-1 flex items-baseline gap-1.5">
+                  <span className="text-2xl font-bold tracking-tight text-slate-900 tabular-nums">
+                    {totals.totalPanels}
+                  </span>
+                  <span className="text-xs font-medium text-slate-400">lites</span>
                 </div>
               </div>
 
-              {/* Metrics Pills */}
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-md font-mono text-xs">
-                  <span className="text-slate-500">Panels:</span>{' '}
-                  <strong className="text-slate-900">{totals.totalPanels} Lites</strong>
+              <div className="bg-white rounded-2xl p-4 border border-black/[0.05] shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
+                <span className="text-xs font-medium text-slate-500">Gross Area</span>
+                <div className="mt-1 flex items-baseline gap-1.5">
+                  <span className="text-2xl font-bold tracking-tight text-slate-900 tabular-nums">
+                    {totals.totalGrossSqFt.toFixed(1)}
+                  </span>
+                  <span className="text-xs font-medium text-slate-400">SF</span>
                 </div>
-                <div className="bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-md font-mono text-xs">
-                  <span className="text-slate-500">Gross Area:</span>{' '}
-                  <strong className="text-slate-900">{totals.totalGrossSqFt.toFixed(2)} SF</strong>
-                </div>
-                <div className="bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-md font-mono text-xs">
-                  <span className="text-slate-500">ASG Film:</span>{' '}
-                  <strong className="text-[#0284C7]">{totals.totalFilmSqFt.toFixed(2)} SF</strong>
-                </div>
-                <div className="bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-md font-mono text-xs">
-                  <span className="text-slate-500">Total Weight:</span>{' '}
-                  <strong className="text-[#002D54]">{totals.totalWeightLbs.toFixed(0)} lbs</strong>
-                </div>
+              </div>
 
-                {/* QA Verification Tester Trigger */}
+              <div className="bg-white rounded-2xl p-4 border border-black/[0.05] shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
+                <span className="text-xs font-medium text-slate-500">Active Film</span>
+                <div className="mt-1 flex items-baseline gap-1.5">
+                  <span className="text-2xl font-bold tracking-tight text-[#007AFF] tabular-nums">
+                    {totals.totalFilmSqFt.toFixed(1)}
+                  </span>
+                  <span className="text-xs font-medium text-slate-400">SF</span>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-2xl p-4 border border-black/[0.05] shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
+                <span className="text-xs font-medium text-slate-500">Total Weight</span>
+                <div className="mt-1 flex items-baseline gap-1.5">
+                  <span className="text-2xl font-bold tracking-tight text-slate-900 tabular-nums">
+                    {totals.totalWeightLbs.toFixed(0)}
+                  </span>
+                  <span className="text-xs font-medium text-slate-400">lbs</span>
+                </div>
+              </div>
+            </section>
+
+            {/* Section Header */}
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+              <div className="flex items-baseline gap-2">
+                <h2 className="text-base font-semibold text-slate-900">
+                  Glass Schedule
+                </h2>
+                <span className="text-xs text-slate-500 tabular-nums">
+                  {items.length} {items.length === 1 ? 'item' : 'items'}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={() => setIsTesterModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#004F8A] border border-blue-200 rounded-md text-xs font-semibold font-mono transition-colors"
-                  title="Verify Dimension Parser, 3/8'' Deduction, & 156 lb Weight Test"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-900 border border-black/[0.06] shadow-2xs text-xs font-medium transition-colors"
                 >
-                  <Calculator className="w-3.5 h-3.5" />
+                  <Calculator className="w-3.5 h-3.5 text-[#007AFF]" />
                   <span>Verify Formulas</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveProject}
+                  disabled={isSaving}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#007AFF] hover:bg-[#0062CC] text-white shadow-2xs text-xs font-semibold transition-colors"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{isSaving ? 'Saving...' : 'Save to DB'}</span>
                 </button>
               </div>
             </div>
 
-            {/* List of Glass Line Item Cards */}
+            {/* Line Item Cards */}
             <div className="space-y-4">
               {items.map((item, idx) => (
                 <LineItemCard
@@ -236,85 +478,139 @@ export default function App() {
               ))}
             </div>
 
-            {/* Add Item Bottom Button */}
-            <div className="flex justify-center pt-2">
+            {/* Add Panel Bottom CTA */}
+            <div className="pt-2 flex justify-center">
               <button
+                type="button"
                 onClick={handleAddItem}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-lg border-2 border-dashed border-slate-300 hover:border-[#004F8A] text-slate-600 hover:text-[#004F8A] bg-white hover:bg-blue-50/40 text-xs font-semibold transition-all shadow-2xs"
+                className="flex items-center gap-2 px-6 py-3 rounded-full bg-white hover:bg-slate-50 active:scale-[0.99] text-[#007AFF] font-semibold text-sm border border-black/[0.06] shadow-xs transition-all"
               >
-                <Plus className="w-4 h-4" />
-                <span>+ Add Another Glass Panel / Lite</span>
+                <Plus className="w-4 h-4 stroke-[2.25]" />
+                <span>Add Glass Panel</span>
               </button>
+            </div>
+
+            {/* Project Documents & Photos */}
+            <div className="pt-2 pb-6">
+              <ProjectAttachments
+                projectId={activeProjectId}
+                onEnsureSaved={ensureProjectSaved}
+                onNotify={showToast}
+              />
             </div>
           </div>
         ) : (
-          /* =========================================================================
-             PRINT & SUBMITTAL DOCUMENT PREVIEW MODE
-             ========================================================================= */
-          <div className="py-6 px-4">
-            {/* Floating Print Navigation Bar (Hidden during actual print) */}
-            <div className="no-print max-w-4xl mx-auto mb-6 bg-slate-900 text-white rounded-lg p-3 shadow-lg flex flex-wrap items-center justify-between gap-3 sticky top-16 z-30">
-              <div className="flex items-center gap-3">
+          /* PRINT & SUBMITTAL DOCUMENT PREVIEW MODE */
+          <div className="py-6 px-4 print:p-0">
+            <div className="no-print max-w-4xl mx-auto mb-6 bg-slate-900/90 backdrop-blur-xl text-white rounded-2xl px-4 py-3 shadow-xl border border-white/10 flex flex-wrap items-center justify-between gap-3 sticky top-20 z-30">
+              <div className="flex items-center gap-3 flex-wrap">
                 <button
+                  type="button"
                   onClick={() => setViewMode('edit')}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors"
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition-colors"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" />
-                  <span>Back to Editor</span>
+                  <span>Editor</span>
                 </button>
-                <div className="border-l border-slate-700 pl-3">
-                  <div className="text-xs font-bold text-slate-100 flex items-center gap-1.5">
-                    <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>8.5&quot; &times; 11&quot; Multi-Page Submittal Package</span>
-                  </div>
-                  <div className="text-[11px] text-slate-400 font-mono">
-                    Page 1: Commercial Estimate &middot; Pages 2&ndash;{items.length + 1}: CAD Shop Drawings
-                  </div>
+
+                {/* Document Type Segmented Control */}
+                <div
+                  role="tablist"
+                  aria-label="Document type"
+                  className="flex items-center bg-white/10 p-0.5 rounded-full"
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={submittalType === 'fabricator'}
+                    onClick={() => setSubmittalType('fabricator')}
+                    className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
+                      submittalType === 'fabricator'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    Fabricator RFQ
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={submittalType === 'client'}
+                    onClick={() => setSubmittalType('client')}
+                    className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
+                      submittalType === 'client'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    Client Proposal
+                  </button>
                 </div>
+
+                {submittalType === 'client' && (
+                  <label className="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={includeCadInProposal}
+                      onChange={(e) => setIncludeCadInProposal(e.target.checked)}
+                      className="rounded accent-[#007AFF]"
+                    />
+                    <span>Include CAD</span>
+                  </label>
+                )}
               </div>
 
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={() => setIsTesterModalOpen(true)}
-                  className="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono transition-colors"
+                  className="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 text-xs font-medium transition-colors"
                 >
-                  Verify Math QA
+                  Verify Math
                 </button>
                 <button
+                  type="button"
                   onClick={handlePrint}
-                  className="flex items-center gap-1.5 px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs transition-colors"
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-[#007AFF] hover:bg-[#0062CC] text-white text-xs font-semibold shadow-xs transition-colors"
                 >
-                  <Printer className="w-4 h-4" />
-                  <span>Print to PDF / Paper</span>
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print / PDF</span>
                 </button>
               </div>
             </div>
 
-            {/* Document Pages Container: Styled to exact 8.5" x 11" Letter sheets */}
-            <div className="space-y-8 print:space-y-0 flex flex-col items-center">
-              {/* PAGE 1: Commercial Estimate & Schedule Sheet */}
-              <div id="print-sheet-estimate">
-                <EstimateSheet
-                  items={items}
-                  project={project}
-                  isPrintPreview={true}
-                />
-              </div>
-
-              {/* SUBSEQUENT PAGES: Technical CAD Shop Drawings */}
-              {items.map((item, idx) => (
-                <div key={item.id} id={`cad-sheet-${idx}`}>
-                  <CadShopDrawing
-                    item={item}
-                    itemIndex={idx}
-                    totalItems={items.length}
+            <div className="space-y-8 print:space-y-0 flex flex-col items-center print:block">
+              <div id="print-sheet-estimate" className="print-sheet-wrapper">
+                {submittalType === 'fabricator' ? (
+                  <EstimateSheet
+                    items={items}
                     project={project}
-                    sheetNumber={idx + 2}
-                    totalSheets={items.length + 1}
                     isPrintPreview={true}
                   />
-                </div>
-              ))}
+                ) : (
+                  <ClientProposalSheet
+                    items={items}
+                    project={project}
+                    totalSheets={includeCadInProposal ? items.length + 1 : 1}
+                    isPrintPreview={true}
+                  />
+                )}
+              </div>
+
+              {(submittalType === 'fabricator' || includeCadInProposal) &&
+                items.map((item, idx) => (
+                  <div key={item.id} id={`cad-sheet-${idx}`} className="print-sheet-wrapper">
+                    <CadShopDrawing
+                      item={item}
+                      itemIndex={idx}
+                      totalItems={items.length}
+                      project={project}
+                      sheetNumber={idx + 2}
+                      totalSheets={items.length + 1}
+                      isPrintPreview={true}
+                    />
+                  </div>
+                ))}
             </div>
           </div>
         )}
@@ -323,9 +619,14 @@ export default function App() {
       {/* Modals */}
       <ProjectInfoModal
         project={project}
+        status={projectStatus}
         isOpen={isProjectModalOpen}
         onClose={() => setIsProjectModalOpen(false)}
-        onSave={(updated) => setProject(updated)}
+        onSave={(updated, newStatus) => {
+          setProject(updated);
+          setProjectStatus(newStatus);
+          setHasUnsavedChanges(true);
+        }}
       />
 
       <ExportDockerModal

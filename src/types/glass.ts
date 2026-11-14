@@ -55,16 +55,24 @@ export interface GlassLineItem {
   height: number; // decimal inches
   layers: GlassStackLayer[];
   notes?: string;
-  unitPrice?: number; // optional commercial price estimate
+  fabricatorCost?: number; // internal cost from glass fabricator per unit
+  unitPrice?: number; // client-facing unit price per lite
 }
 
 export interface ProjectInfo {
   docId: string; // e.g. "ASG-EST-1001"
   projectName: string;
+  // Glass Fabricator fields
   clientName: string;
   contactPerson: string;
   contactEmail: string;
   contactPhone: string;
+  // End Client fields (for Client Proposal)
+  endClientName?: string;
+  endClientContact?: string;
+  endClientEmail?: string;
+  endClientPhone?: string;
+  proposalNotes?: string;
   projectAddress: string;
   date: string;
   validUntil: string;
@@ -93,4 +101,74 @@ export interface ProjectTotals {
   totalWeightLbs: number;
   totalFilmSqFt: number;
   totalPrice?: number;
+}
+
+export type ProjectStatus = 'Draft' | 'Quoted' | 'Approved' | 'In Production' | 'Completed';
+
+export interface SavedProjectSummary {
+  id: string;
+  docId: string;
+  projectName: string;
+  clientName: string;
+  status: ProjectStatus;
+  itemCount: number;
+  totalPanels: number;
+  totalGrossSqFt: number;
+  totalFilmSqFt: number;
+  totalWeightLbs: number;
+  totalProposalAmount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SavedProjectRecord {
+  id: string;
+  status: ProjectStatus;
+  project: ProjectInfo;
+  items: GlassLineItem[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ReportProjectRow {
+  id: string;
+  docId: string;
+  projectName: string;
+  fabricatorName: string;
+  endClientName: string;
+  status: ProjectStatus;
+  itemCount: number;
+  totalPanels: number;
+  totalGrossSqFt: number;
+  totalFilmSqFt: number;
+  totalWeightLbs: number;
+  totalFabCost: number;
+  totalClientPrice: number;
+  grossProfit: number;
+  marginPercent: number;
+  updatedAt: string;
+}
+
+export interface ReportMaterialBreakdown {
+  specLabel: string;
+  lites: number;
+  grossSqFt: number;
+  filmSqFt: number;
+  weightLbs: number;
+  fabCost: number;
+  clientPrice: number;
+}
+
+export interface ReportsSummaryResponse {
+  projects: ReportProjectRow[];
+  materialBreakdown: ReportMaterialBreakdown[];
+}
+
+export interface ProjectAttachment {
+  id: string;
+  projectId: string;
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  createdAt: string;
 }

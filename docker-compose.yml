@@ -1,0 +1,73 @@
+services:
+  mariadb:
+    image: mariadb:11
+    container_name: asg-mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-asg_root_pass}
+      MARIADB_DATABASE: ${DB_NAME:-asg_estimator}
+      MARIADB_USER: ${DB_USER:-asg_user}
+      MARIADB_PASSWORD: ${DB_PASSWORD:-asg_pass}
+    ports:
+      - "${DB_PORT:-3308}:3306"
+    volumes:
+      - asg_mariadb_data:/var/lib/mysql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: asg-phpmyadmin
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      PMA_HOST: mariadb
+      PMA_PORT: 3306
+      PMA_USER: ${DB_USER:-asg_user}
+      PMA_PASSWORD: ${DB_PASSWORD:-asg_pass}
+    ports:
+      - "${PMA_PORT:-8084}:80"
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: asg-backend
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      PORT: 4000
+      DB_HOST: mariadb
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-asg_user}
+      DB_PASSWORD: ${DB_PASSWORD:-asg_pass}
+      DB_NAME: ${DB_NAME:-asg_estimator}
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - asg_uploads:/app/uploads
+    ports:
+      - "${API_PORT:-4000}:4000"
+
+  asg-estimator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: asg-estimator-app
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${PORT:-8083}:80"
+
+volumes:
+  asg_mariadb_data:
+  asg_uploads:

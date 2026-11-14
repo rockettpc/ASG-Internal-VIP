@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ProjectInfo, GlassLineItem } from '../types/glass';
 import { X, Copy, Check, Download, Box, Terminal, FileCode } from 'lucide-react';
 
@@ -17,6 +17,15 @@ export const ExportDockerModal: React.FC<ExportDockerModalProps> = ({
 }) => {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const dockerfileContent = `FROM nginx:alpine
@@ -27,10 +36,10 @@ CMD ["nginx", "-g", "daemon off;"]`;
   const dockerRunCommands = `# 1. Build the lightweight ASG Estimator Docker container
 docker build -t asg-shop-drawing-generator .
 
-# 2. Run locally on port 8080
-docker run -d -p 8080:80 --name asg-app asg-shop-drawing-generator
+# 2. Run locally on port 8083
+docker run -d -p 8083:80 --name asg-app asg-shop-drawing-generator
 
-# 3. Access in browser at http://localhost:8080`;
+# 3. Access in browser at http://localhost:8083`;
 
   const projectJson = JSON.stringify({ project, items }, null, 2);
 
@@ -61,49 +70,85 @@ docker run -d -p 8080:80 --name asg-app asg-shop-drawing-generator
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full border border-slate-200 overflow-hidden">
-        {/* Header */}
-        <div className="bg-[#002D54] text-white px-5 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <Box className="w-5 h-5 text-sky-400" />
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="export-modal-title"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 backdrop-blur-sm p-4 overflow-y-auto"
+    >
+      <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full border border-black/[0.06] overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-2xl bg-[#007AFF]/10 text-[#007AFF] flex items-center justify-center">
+              <Box className="w-5 h-5" />
+            </div>
             <div>
-              <h3 className="text-sm font-bold tracking-wide uppercase font-mono">
-                Docker &amp; Single-File Artifact Export
+              <h3 id="export-modal-title" className="text-base font-semibold text-slate-900">
+                Export &amp; Docker Deployment
               </h3>
-              <p className="text-xs text-blue-200">
-                Self-contained NGINX Alpine Docker deployment &amp; JSON data export
+              <p className="text-xs text-slate-500">
+                Download schedule JSON or self-hosted container specs
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="text-blue-200 hover:text-white p-1 rounded transition-colors"
+            aria-label="Close modal"
+            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-5 space-y-4 text-xs font-mono">
-          {/* PRD Reference info */}
-          <div className="bg-blue-50 border border-blue-200 rounded p-3 text-blue-900 text-xs font-sans">
-            <strong>Target Deployment Model:</strong> In accordance with Section 1 of the PRD,
-            this applet can run directly in Google AI Studio or be packed into a zero-build NGINX
-            Alpine container for local on-premise glazier shop workstations.
+        <div className="p-6 space-y-5 text-xs">
+          {/* Project JSON Backup */}
+          <div className="bg-[#F2F2F7]/70 rounded-2xl p-4 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-slate-900 flex items-center gap-2 text-sm">
+                <FileCode className="w-4 h-4 text-[#007AFF]" />
+                Schedule JSON Backup
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleCopy(projectJson, 'json')}
+                  className="text-xs font-medium text-slate-700 hover:text-slate-900 flex items-center gap-1 bg-white px-3 py-1.5 rounded-full border border-black/[0.06] transition-colors"
+                >
+                  {copiedKey === 'json' ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                  {copiedKey === 'json' ? 'Copied' : 'Copy'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadJson}
+                  className="text-xs font-semibold text-white bg-[#007AFF] hover:bg-[#0062CC] flex items-center gap-1.5 px-3.5 py-1.5 rounded-full transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Download JSON
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-slate-500">
+              Save your complete glass schedule, line items, and custom layer specs for fabrication partners.
+            </p>
           </div>
 
           {/* Dockerfile Section */}
           <div>
-            <div className="flex items-center justify-between mb-1.5 font-sans">
-              <span className="font-semibold text-slate-700 flex items-center gap-1.5">
-                <FileCode className="w-4 h-4 text-[#004F8A]" />
-                Dockerfile (NGINX Alpine Static Server)
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-semibold text-slate-800 flex items-center gap-1.5">
+                <FileCode className="w-4 h-4 text-slate-400" />
+                Dockerfile (Nginx Alpine)
               </span>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <button
+                  type="button"
                   onClick={() => handleCopy(dockerfileContent, 'dockerfile')}
-                  className="text-xs text-slate-600 hover:text-slate-900 flex items-center gap-1 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded transition-colors"
+                  className="text-xs font-medium text-slate-600 hover:text-slate-900 flex items-center gap-1 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-full transition-colors"
                 >
                   {copiedKey === 'dockerfile' ? (
                     <Check className="w-3.5 h-3.5 text-emerald-600" />
@@ -113,85 +158,53 @@ docker run -d -p 8080:80 --name asg-app asg-shop-drawing-generator
                   {copiedKey === 'dockerfile' ? 'Copied' : 'Copy'}
                 </button>
                 <button
+                  type="button"
                   onClick={handleDownloadDockerfile}
-                  className="text-xs text-[#004F8A] hover:text-[#002D54] flex items-center gap-1 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded transition-colors"
+                  className="text-xs font-medium text-[#007AFF] hover:text-[#0062CC] flex items-center gap-1 bg-sky-50 hover:bg-sky-100 px-2.5 py-1 rounded-full transition-colors"
                 >
                   <Download className="w-3.5 h-3.5" />
                   Download
                 </button>
               </div>
             </div>
-            <pre className="bg-slate-900 text-slate-100 p-3 rounded text-[11px] font-mono overflow-x-auto">
+            <pre className="bg-slate-900 text-slate-100 p-3.5 rounded-2xl text-[11px] font-mono overflow-x-auto">
               {dockerfileContent}
             </pre>
           </div>
 
           {/* Terminal Commands */}
           <div>
-            <div className="flex items-center justify-between mb-1.5 font-sans">
-              <span className="font-semibold text-slate-700 flex items-center gap-1.5">
-                <Terminal className="w-4 h-4 text-emerald-700" />
-                Terminal Execution Commands
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-semibold text-slate-800 flex items-center gap-1.5">
+                <Terminal className="w-4 h-4 text-slate-400" />
+                Docker Run Commands
               </span>
               <button
+                type="button"
                 onClick={() => handleCopy(dockerRunCommands, 'commands')}
-                className="text-xs text-slate-600 hover:text-slate-900 flex items-center gap-1 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded transition-colors"
+                className="text-xs font-medium text-slate-600 hover:text-slate-900 flex items-center gap-1 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-full transition-colors"
               >
                 {copiedKey === 'commands' ? (
                   <Check className="w-3.5 h-3.5 text-emerald-600" />
                 ) : (
                   <Copy className="w-3.5 h-3.5" />
                 )}
-                {copiedKey === 'commands' ? 'Copied' : 'Copy Commands'}
+                {copiedKey === 'commands' ? 'Copied' : 'Copy'}
               </button>
             </div>
-            <pre className="bg-slate-900 text-emerald-400 p-3 rounded text-[11px] font-mono overflow-x-auto whitespace-pre-wrap">
+            <pre className="bg-slate-900 text-emerald-400 p-3.5 rounded-2xl text-[11px] font-mono overflow-x-auto whitespace-pre-wrap">
               {dockerRunCommands}
             </pre>
           </div>
-
-          {/* Project JSON Backup */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5 font-sans">
-              <span className="font-semibold text-slate-700 flex items-center gap-1.5">
-                <FileCode className="w-4 h-4 text-amber-600" />
-                Glass Schedule &amp; Project JSON Data
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handleCopy(projectJson, 'json')}
-                  className="text-xs text-slate-600 hover:text-slate-900 flex items-center gap-1 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded transition-colors"
-                >
-                  {copiedKey === 'json' ? (
-                    <Check className="w-3.5 h-3.5 text-emerald-600" />
-                  ) : (
-                    <Copy className="w-3.5 h-3.5" />
-                  )}
-                  {copiedKey === 'json' ? 'Copied' : 'Copy JSON'}
-                </button>
-                <button
-                  onClick={handleDownloadJson}
-                  className="text-xs text-amber-700 hover:text-amber-900 flex items-center gap-1 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded transition-colors"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Download JSON
-                </button>
-              </div>
-            </div>
-            <div className="text-[11px] font-sans text-slate-500">
-              Save your complete schedule, line items, and custom layer makeup specs for import or
-              sharing with fabrication partners.
-            </div>
-          </div>
         </div>
 
-        {/* Footer */}
-        <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 flex justify-end">
+        <div className="px-6 py-4 border-t border-slate-100 flex justify-end">
           <button
+            type="button"
             onClick={onClose}
-            className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-xs font-sans font-medium transition-colors"
+            className="px-5 py-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold transition-colors"
           >
-            Close
+            Done
           </button>
         </div>
       </div>

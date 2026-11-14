@@ -52,8 +52,8 @@ export const EstimateSheet: React.FC<EstimateSheetProps> = ({
             </div>
 
             <div className="text-right">
-              <div className="text-[20px] font-black text-[#004F8A] tracking-wider uppercase font-mono">
-                GLASS ESTIMATE
+              <div className="text-[18px] font-black text-[#004F8A] tracking-wider uppercase font-mono">
+                FABRICATION ESTIMATE
               </div>
               <div className="text-[11px] font-bold text-slate-800 font-mono">
                 DOC ID: <span className="text-[#004F8A]">{project.docId}</span>
@@ -83,7 +83,7 @@ export const EstimateSheet: React.FC<EstimateSheetProps> = ({
 
             <div className="border-l border-slate-200 pl-3">
               <div className="text-[7.5px] font-mono uppercase tracking-wider text-slate-500 font-bold mb-0.5">
-                CLIENT &amp; GLAZING CONTRACTOR
+                GLASS FABRICATOR (TO)
               </div>
               <div className="text-[11px] font-bold text-slate-900">
                 {project.clientName}
@@ -230,19 +230,19 @@ export const EstimateSheet: React.FC<EstimateSheetProps> = ({
           </div>
         </div>
 
-        {/* Commercial Terms & Client Approval Signature Block */}
+        {/* Fabricator Confirmation & ASG Authorization Signature Block */}
         <div className="border-t-2 border-slate-800 pt-2 text-[8px] font-mono">
           <div className="mb-2 text-slate-600 text-[7.5px] leading-tight">
-            <strong>ACCEPTANCE OF ESTIMATE &amp; DRAWING APPROVAL:</strong> By signing below, the Client /
-            Glazing Contractor authorizes American Switch Glass to prepare shop drawings and commence
-            material staging. All field dimensions and wire access pathways must be verified by the
-            purchaser prior to glass cutting and tempering.
+            <strong>FABRICATION ESTIMATE &amp; SPECIFICATION CONFIRMATION:</strong> By signing below,
+            the Glass Fabricator confirms receipt of all dimensions, layer stack makeups, busbar
+            locations, and active PDLC film cut sizes for production quoting and scheduling. All
+            ASTM C1172 tolerances must be verified prior to glass cutting and tempering.
           </div>
 
           <div className="grid grid-cols-12 gap-4 mt-2">
             <div className="col-span-6 border-t border-slate-400 pt-1">
               <div className="flex justify-between text-[8px] text-slate-500">
-                <span>AUTHORIZED CLIENT / GLAZIER SIGNATURE</span>
+                <span>AUTHORIZED FABRICATOR SIGNATURE</span>
                 <span>DATE</span>
               </div>
               <div className="h-6"></div>
@@ -253,20 +253,20 @@ export const EstimateSheet: React.FC<EstimateSheetProps> = ({
 
             <div className="col-span-6 border-t border-slate-400 pt-1">
               <div className="flex justify-between text-[8px] text-slate-500">
-                <span>AMERICAN SWITCH GLASS AUTHORIZATION</span>
+                <span>AMERICAN SWITCH GLASS (GLAZING CONTRACTOR)</span>
                 <span>DATE</span>
               </div>
               <div className="h-6"></div>
               <div className="text-[8px] text-slate-700 font-semibold uppercase">
-                ASG ENGINEERING REPRESENTATIVE: {project.preparedBy}
+                ASG REPRESENTATIVE: {project.preparedBy}
               </div>
             </div>
           </div>
 
           {/* Footer Page Marker */}
           <div className="flex items-center justify-between text-[7.5px] text-slate-400 border-t border-slate-200 mt-2 pt-1">
-            <span>American Switch Glass Corporation &middot; www.americanswitchglass.com</span>
-            <span className="font-bold text-slate-600">SHEET 1 OF {items.length + 1} &middot; COMMERCIAL ESTIMATE</span>
+            <span>American Switch Glass Corporation &middot; Glazing Contractor &middot; www.americanswitchglass.com</span>
+            <span className="font-bold text-slate-600">SHEET 1 OF {items.length + 1} &middot; FABRICATION ESTIMATE REQUEST</span>
           </div>
         </div>
       </div>

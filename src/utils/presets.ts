@@ -21,7 +21,7 @@ export const GLASS_PRESETS: PresetMakeup[] = [
     id: 'preset-standard-asg',
     name: 'Standard ASG Switchable Privacy Glass',
     category: 'Switchable',
-    description: '5/16" Nom. (1/4" Low Iron Tempered + 0.045" PVB + ASG PDLC Film + 0.045" PVB + 1/4" Low Iron Tempered)',
+    description: '5/8" Nom. (1/4" Low Iron Tempered + 0.045" PVB + ASG PDLC Film + 0.045" PVB + 1/4" Low Iron Tempered)',
     layers: [
       {
         id: 'p1-1',
@@ -92,7 +92,7 @@ export const GLASS_PRESETS: PresetMakeup[] = [
     id: 'preset-asg-igu',
     name: 'ASG Insulated Glass Unit (IGU)',
     category: 'Insulated',
-    description: '1-1/16" Nom. Dual-glazed IGU with exterior Low-E and interior ASG Switchable Privacy Laminated inboard lite.',
+    description: '1-3/8" Nom. Dual-glazed IGU with exterior Low-E and interior ASG Switchable Privacy Laminated inboard lite.',
     layers: [
       {
         id: 'p3-1',
@@ -149,7 +149,7 @@ export const GLASS_PRESETS: PresetMakeup[] = [
     id: 'preset-security-switchable',
     name: 'Acoustic / High-Security Switchable',
     category: 'Switchable',
-    description: '13/16" Heavy-duty laminated safety makeup with SentryGlas structural interlayer.',
+    description: '7/8" Nom. Heavy-duty laminated safety makeup with SentryGlas structural interlayer.',
     layers: [
       {
         id: 'p4-1',
